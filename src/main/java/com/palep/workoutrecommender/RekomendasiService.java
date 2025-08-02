@@ -18,19 +18,25 @@ public class RekomendasiService {
     @Autowired
     private RekomendasiRepository rekomendasiRepository;
 
-    // Bobot fitur dan nilai K sesuai dokumen skripsi
-    private static final double BOBOT_TUJUAN = 0.4;
-    private static final double BOBOT_BMI = 0.3;
+    // Bobot fitur dan nilai K sesuai dokumen skripsi - DITAMBAH GENDER
+    private static final double BOBOT_TUJUAN = 0.3;
+    private static final double BOBOT_BMI = 0.25;
     private static final double BOBOT_USIA = 0.2;
     private static final double BOBOT_FREKUENSI = 0.1;
+    private static final double BOBOT_GENDER = 0.15; // Bobot baru untuk gender
     private static final int K_VALUE = 5;
 
     /**
      * Method utama untuk membuat rekomendasi baru menggunakan siklus CBR.
      */
     public Rekomendasi createRekomendasi(RekomendasiRequest request) {
-        // TAHAP 1: RETRIEVE
-        List<Rekomendasi> caseBase = rekomendasiRepository.findAll();
+        // TAHAP 1: RETRIEVE - Filter berdasarkan gender terlebih dahulu
+        List<Rekomendasi> caseBase = rekomendasiRepository.findAll()
+                .stream()
+                .filter(oldCase -> oldCase.getJenisKelamin() != null && 
+                        oldCase.getJenisKelamin().equalsIgnoreCase(request.getJenisKelamin()))
+                .collect(Collectors.toList());
+
         if (caseBase.isEmpty()) {
             return retainNewCase(request, createDefaultRekomendasi(request));
         }
@@ -86,8 +92,10 @@ public class RekomendasiService {
         double simFrekuensi = 1 - Math.abs(
                 normalize(newCase.getFrekuensiLatihan(), 1, 7) - normalize(oldCase.getFrekuensiLatihanInput(), 1, 7));
         double simTujuan = newCase.getTujuanLatihan().equalsIgnoreCase(oldCase.getTujuanLatihan()) ? 1.0 : 0.0;
+        double simGender = newCase.getJenisKelamin().equalsIgnoreCase(oldCase.getJenisKelamin()) ? 1.0 : 0.0;
+        
         return (simTujuan * BOBOT_TUJUAN) + (simBmi * BOBOT_BMI) + (simUsia * BOBOT_USIA)
-                + (simFrekuensi * BOBOT_FREKUENSI);
+                + (simFrekuensi * BOBOT_FREKUENSI) + (simGender * BOBOT_GENDER);
     }
 
     private Rekomendasi adaptSolution(List<Rekomendasi> neighbors, RekomendasiRequest request) {
@@ -98,19 +106,30 @@ public class RekomendasiService {
                 .getKey();
         Rekomendasi template = neighbors.stream().filter(c -> c.getDetailProgram().equals(winningSolutionDetail))
                 .findFirst().orElse(neighbors.get(0));
+        
         Rekomendasi newRekomendasi = new Rekomendasi();
         newRekomendasi.setJenisLatihan(template.getJenisLatihan());
         newRekomendasi.setDurasi(template.getDurasi());
         newRekomendasi.setIntensitas(template.getIntensitas());
         newRekomendasi.setDetailProgram(template.getDetailProgram());
+        
+        // Adaptasi berdasarkan karakteristik pengguna
         if (request.getUsia() > 40) {
             newRekomendasi.setIntensitas("Ringan ke Sedang");
         }
+        
+        // Adaptasi berdasarkan gender dan BMI
         if (request.getBmi() > 25) {
-            newRekomendasi.setCatatanKhusus("Fokus pada sesi cardio untuk memaksimalkan pembakaran kalori.");
+            if (request.getJenisKelamin().equalsIgnoreCase("Perempuan")) {
+                newRekomendasi.setCatatanKhusus("Fokus pada cardio dan toning untuk pembakaran kalori. Program disesuaikan untuk wanita.");
+            } else {
+                newRekomendasi.setCatatanKhusus("Fokus pada strength training dan cardio intensif untuk pembakaran kalori.");
+            }
         } else {
-            newRekomendasi.setCatatanKhusus("Program disesuaikan dengan tujuan: " + request.getTujuanLatihan());
+            newRekomendasi.setCatatanKhusus("Program disesuaikan dengan tujuan: " + request.getTujuanLatihan() + 
+                    " untuk " + request.getJenisKelamin().toLowerCase());
         }
+        
         newRekomendasi.setFrekuensi(request.getFrekuensiLatihan() + " kali/minggu");
         return newRekomendasi;
     }
@@ -122,6 +141,7 @@ public class RekomendasiService {
         newCase.setBmi(request.getBmi());
         newCase.setTujuanLatihan(request.getTujuanLatihan());
         newCase.setFrekuensiLatihanInput(request.getFrekuensiLatihan());
+        newCase.setJenisKelamin(request.getJenisKelamin()); // Set gender
         newCase.setTanggal(LocalDate.now());
         newCase.setJenisLatihan(solution.getJenisLatihan());
         newCase.setFrekuensi(solution.getFrekuensi());
@@ -140,14 +160,24 @@ public class RekomendasiService {
 
     private Rekomendasi createDefaultRekomendasi(RekomendasiRequest request) {
         Rekomendasi defaultRekomendasi = new Rekomendasi();
-        defaultRekomendasi.setJenisLatihan("Kombinasi Cardio dan Strength");
+        
+        // Rekomendasi default berdasarkan gender
+        if (request.getJenisKelamin().equalsIgnoreCase("Perempuan")) {
+            defaultRekomendasi.setJenisLatihan("Kombinasi Cardio dan Toning");
+            defaultRekomendasi.setDetailProgram(
+                    "• Cardio: 25 menit (65-70% MHR)\n• Toning & Strength: 20 menit (fokus pada core, glutes, dan arms)\n• Flexibility: 10 menit stretching");
+            defaultRekomendasi.setCatatanKhusus("Program khusus wanita dengan fokus pada toning dan fleksibilitas.");
+        } else {
+            defaultRekomendasi.setJenisLatihan("Kombinasi Strength dan Cardio");
+            defaultRekomendasi.setDetailProgram(
+                    "• Strength Training: 25 menit (fokus compound movements)\n• Cardio: 20 menit (70-75% MHR)\n• Core strengthening: 10 menit");
+            defaultRekomendasi.setCatatanKhusus("Program khusus pria dengan fokus pada strength building dan massa otot.");
+        }
+        
         defaultRekomendasi.setFrekuensi(request.getFrekuensiLatihan() + " kali/minggu");
-        defaultRekomendasi.setDurasi("45 menit/sesi");
+        defaultRekomendasi.setDurasi("50-60 menit/sesi");
         defaultRekomendasi.setIntensitas("Sedang");
-        defaultRekomendasi.setDetailProgram(
-                "• Cardio: 20 menit (70% MHR)\n• Strength: 25 menit (fokus pada area core dan lower body)");
-        defaultRekomendasi
-                .setCatatanKhusus("Ini adalah rekomendasi awal. Akurasi akan meningkat seiring bertambahnya data.");
+        
         return defaultRekomendasi;
     }
 }

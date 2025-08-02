@@ -1,4 +1,3 @@
-// File: src/main/java/com/palep/workoutrecommender/RekomendasiRequest.java
 package com.palep.workoutrecommender;
 
 import lombok.Data;
@@ -10,5 +9,5 @@ public class RekomendasiRequest {
     private double bmi;
     private String tujuanLatihan;
     private int frekuensiLatihan;
-    private String jenisKelamin;
+    private String jenisKelamin; // Field baru untuk gender filtering
 }
